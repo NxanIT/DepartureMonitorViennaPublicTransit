@@ -15,7 +15,7 @@ def delta_minutes(dtime_1:datetime, dtime_2:datetime):
 
 
 class Monitor:
-    def __init__(self,cs, dc, rst, spi,normal_spacing = 1):
+    def __init__(self,cs, dc, rst, spi, normal_spacing = 1, period_advanced_preview = 4):
         self.normal_spacing = normal_spacing
 
         #create display:
@@ -26,27 +26,32 @@ class Monitor:
         
         #load font:
         self.font = XglcdFont('fonts/default_font.c',10,16)
-
+        
+        #variables for 'in-station animation' and 'advanced-preview animation'
+        self.in_station_animation_index = 0
+        self.period_advanced_preview = period_advanced_preview
+        
+    
     def show_departures(self,departures,ref_time,platform=None,display_line=False,advanced_preview=False):
         max_char_towards = 19 if platform == None else 16
         text_start = [0,8]
-        
         if (platform!=None):
-            self.Display.draw_bitmap_mono(f'Gleis{platform}.bmp',0,0,36,64)#TODO: catch no file in directory error
+            platform_path = f'img/Gleis{platform}.mono'
+            self.Display.draw_bitmap_mono(platform_path,0,0,36,64,invert=True)#TODO: catch no file in directory error
             text_start[0] = 40
         
         for i in range(len(departures)):
             departure = departures[i]
-
-            countdown = delta_minutes(departure['time'], ref_time)
+            countdown = delta_minutes(ref_time,departure['time'])
+            
             if (countdown<0):
                 continue #train no longer in station, continue
-
+            
             grayscale_this_departure = 15
             if (advanced_preview and text_start[1]>=32 and len(departures)-1>i): 
-                #in second line, advanced preview enabled and a next departure exists
-                period = 4 #seconds
-                t = time.ticks_ms() % (period*math.pi*2000)
+                #we are in second line, advanced preview is enabled and a next departure exists
+
+                t = time.ticks_ms() % (self.period_advanced_preview*math.pi*2000)
                 grayscale_this_departure = max(math.floor(15.9*math.cos(t)),0)
                 grayscale_next_departure = -min(math.floor(15.9*math.cos(t)),0)
                 #display next_departure 
@@ -55,7 +60,7 @@ class Monitor:
                 self.__print_foldingRamp(text_start[1],next_departure,gs=grayscale_next_departure)
                 next_countdown = delta_minutes(next_departure['time'], ref_time)
                 self.__print_countdown(text_start[1],next_countdown,gs=grayscale_next_departure)
-
+            
             self.__print_towards(*text_start,departure,display_line,max_len=max_char_towards,gs=grayscale_this_departure)
             self.__print_foldingRamp(text_start[1],departure,gs=grayscale_this_departure)
             self.__print_countdown(text_start[1],countdown,gs=grayscale_this_departure)
@@ -63,24 +68,29 @@ class Monitor:
             text_start[1] += 32
             if (text_start[1]>=64):#breaks after second entry
                 break
+        
         self.Display.present()
         pass
 
     def __print_towards(self,x_start:int,y_start:int,departure,display_line, max_len=16,gs=15):
+        self.Display.fill_rectangle(x_start,y_start,215-x_start,16,gs=0)
         towards = departure['towards'][:max_len]
         if (display_line):
             towards = (departure['line'] + ' ' + towards)[:max_len]
         self.Display.draw_text(x_start,y_start,towards,self.font,gs=gs,spacing=self.normal_spacing)
 
     def __print_foldingRamp(self,y_start:int,departure,gs=15):
+        self.Display.fill_rectangle(216,y_start,10,16,gs=0)
         flag_folding_ramp = departure['foldingRamp']
         if (flag_folding_ramp):
             self.Display.draw_text(216, y_start,'-',self.font,gs=gs)
 
     def __print_countdown(self,y_start:int,countdown:int,gs=15):
+        self.Display.fill_rectangle(230,y_start,256-230,16,gs=0)
         if (countdown==0):
             currently_in_station = [' *', '* ']
-            t = int(time.time()) % 2
+            t = self.in_station_animation_index #old implementation: t = int(time.time()) % 2
+            self.in_station_animation_index = 1 - self.in_station_animation_index
             symbol = currently_in_station[t]
             self.Display.draw_text(230,y_start,symbol,self.font,gs=gs,spacing=self.normal_spacing)
             return
