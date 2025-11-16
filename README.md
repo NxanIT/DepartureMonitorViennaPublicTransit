@@ -1,14 +1,24 @@
 # Departure monitor for Vienna's metro system
 An adjustable display for departures of one station in Vienna's public transport system. 
 In the current version only the metro lines are available for display. Used are:
-- The API of "WienerLinien"
+- The API of "WienerLinien" (cf. [documentation](https://www.wienerlinien.at/ogd_realtime/doku/) or [at data.gv.at](https://www.data.gv.at/katalog/datasets/522d3045-0b37-48d0-b868-57c99726b1c4))
 - micropython-ssd1322, a repository from rdagger providing a micropython driver for OLED-displays using the SSD1322 chip
 - An Arduiono Nano ESP32
 - Two monochrome (yellow) [OLED-displays](https://www.mouser.at/ProductDetail/763-3.12-25664UCY2) with a SSD1322 driver IC and a resolution of 265x64 px
 
-![image-of-monitor](https://github.com/user-attachments/assets/581909c9-1f3e-4301-a255-97ee47c0086b)
+|old font without frame|new font (default)|
+|---|---|
+|![image-of-monitor](https://github.com/user-attachments/assets/581909c9-1f3e-4301-a255-97ee47c0086b)|![image-new-font](https://github.com/user-attachments/assets/572a8ce5-9665-4dd2-adec-68b574d077da)|
+
+
 >[!Note]
 >The code updated to this repository is not the final version. I will update the code from time to time to resolve any bugs.
+>Known issues:
+> - [ ] certain stations (terminal stations) may require a diffrent amount of monitors then present, get_departures_platform_mode() has to be updated to account for that 
+> - [ ] implement method for changing side of "platform number"
+> - [ ] implement alternative display-modes to toggle showing only "platform number", only "line", or both
+> - [ ] in __print_countdown, the start position should be shifted 3-4px to the right, if the countdown is between 0 and 9
+> - [ ] a better casting method for the terminal stations of the trains is needed
 
 ## Electronic description
 ### Pinout Display
