@@ -1,10 +1,10 @@
 from datetime import datetime
-import urequests
+import urequests #type:ignore
 
 def stripDatetime(datetime_str:str):
     '''returns: datetime representation of input.
 
-    asserts the format of datetime_str to be: YYYY-MM-DDThh:mm:ss.[XXX]
+    asserts the format of datetime_str to be: YYYY-MM-DDThh:mm:ss.[XXX], where [XXX] is simply ignored
     '''
     index_endOfDate = datetime_str.index('T')
     index_endOfTime = datetime_str.index('.')
@@ -19,10 +19,10 @@ def stripDatetime(datetime_str:str):
     return datetime(*list_date_int,*list_time_int)
 
 def fetch(line_selected:str, station_selected:int):
-    '''returns: API data or None if an error occured.
+    '''returns: raw API data as a dictionary | None, if an error occured.
     '''
-    list_meassure_ids = get_meassured_ids(line_selected,station_selected)
-    URL = generateAPI_URL(list_meassure_ids)
+    list_meassure_ids = __get_meassured_ids(line_selected,station_selected)
+    URL = __generateAPI_URL(list_meassure_ids)
     data = None
     try:
         response = urequests.get(URL)
@@ -34,8 +34,8 @@ def fetch(line_selected:str, station_selected:int):
         
         return data
         
-def generateAPI_URL(list_meassure_ids,FLAG_use_stopID=True):
-    '''returns: url for get request of stopIDs in list_meassure_ids.
+def __generateAPI_URL(list_meassure_ids,FLAG_use_stopID=True):
+    '''returns: url for get-request of stopIDs (or diva) in list_meassure_ids.
     '''
     assert len(list_meassure_ids)>0
     request_type = 'stopID=' if FLAG_use_stopID else 'diva='
@@ -44,7 +44,7 @@ def generateAPI_URL(list_meassure_ids,FLAG_use_stopID=True):
         string += '&' + request_type + str(name)
     return string
     
-def get_meassured_ids(line_selected:str,station_selected):
+def __get_meassured_ids(line_selected:str,station_selected):
     '''returns: list of stopIDs corresponding to selected line and station.
     '''
     stop_IDs_U1 = [[4134,4133], [4135,4132], [4136,4131], [4137,4130], [4138,4129], [4101,4128], [4103,4126], [4105,4124], [4107,4122], [4109,4120], [4111,4118], [4113,4116], [4115,4114], [4117,4112], [4119,4110], [4121,4108], [4123,4106], [4125,4104], [4127,4102], [4181,4186], [4182,4187], [4183,4188], [4184,4189], [4185,4190]] #index 0,0 is Oberlaa ->Leopoldau
@@ -55,21 +55,8 @@ def get_meassured_ids(line_selected:str,station_selected):
     Stop_IDs = {'U1':stop_IDs_U1,'U2':stop_IDs_U2,'U3':stop_IDs_U3,'U4':stop_IDs_U4,'U6':stop_IDs_U6}
     return Stop_IDs[line_selected][station_selected]
 
-def check_station_name(name:str, line:str = None):
-    value = name.upper().strip()
-    if " " in value:
-        value = value[:value.index(" ",6)]
-    #TODO: check for decoding errors here
-    common_names = ["OBERLAA", "LEOPOLDAU", "KARLSPLATZ", "SEESTADT", 
-                    "SIMMERING", "OTTAKRING","HÜTTELDORF", "HEILIGENSTADT", 
-                    "SIEBENHIRTEN", "FLORIDSDORF"]#TODO add intermediate terminal stations u1,u2
-    if value in common_names:
-        return value
-    #TODO: implement more checks when not correct values occur
-    return value
-
 def get_departures(data:dict, platform_mode = False,number_of_monitors=2):
-    '''returns: (departures:list[list[dict[str,]]], platforms:list[int | None]) 
+    '''returns: (departures:list[list[dict[str,]]], platforms:list[int] | None) 
     * departures: each dictionary corresponds to one train, 
         each list of dict either corresponds to trains of one platform or trains traveling in one direction
 
@@ -79,10 +66,10 @@ def get_departures(data:dict, platform_mode = False,number_of_monitors=2):
             - folding_ramp: bool
     * platforms: list of integer values of the platforms or None if platform_mode==False   
     '''
-    JSON_CONVERSION_FUNCTIONS = {False:get_departures_direction_mode, True:get_departures_platform_mode}
+    JSON_CONVERSION_FUNCTIONS = {False:__get_departures_direction_mode, True:__get_departures_platform_mode}
     return JSON_CONVERSION_FUNCTIONS[platform_mode](data,number_of_monitors)
 
-def get_departures_platform_mode(data:dict,number_of_monitors):
+def __get_departures_platform_mode(data:dict,number_of_monitors):
     MAX_ITEMS_PER_PLATFORM = 4
     unfiltered_departures:dict[int,list[dict]] = {}
 
@@ -98,7 +85,7 @@ def get_departures_platform_mode(data:dict,number_of_monitors):
             
             for dep_data in dep_data_array:
                 if not 'departureTime' in dep_data.keys():
-                    print('departureTime not found in data', dep_data)
+                    print('departureTime not found in data, continuing...', dep_data)
                     continue
                 platform_nr = default_platform_nr
                 towards_raw = default_towards_raw
@@ -115,7 +102,7 @@ def get_departures_platform_mode(data:dict,number_of_monitors):
                 dep_time_str:str = dep_data['departureTime']['timeReal'] if 'timeReal' in dep_data['departureTime'] \
                                                                     else dep_data['departureTime']['timePlanned']
                 dep_time = stripDatetime(dep_time_str)
-                towards = check_station_name(towards_raw)
+                towards = __check_station_name(towards_raw)
 
                 #append to departures
                 toAppend = {'towards':towards,'time':dep_time,'foldingRamp':folding_ramp,'line':line}
@@ -130,12 +117,12 @@ def get_departures_platform_mode(data:dict,number_of_monitors):
         return departures, platforms
     #too many platforms for monitors - filter out platforms with few departures
     #TODO:
-    print("To many platforms - info: ", departures)
+    print('To many platforms - info: ', departures)
     print(platforms)
     raise NotImplementedError
 
 
-def get_departures_direction_mode(data:dict,number_of_monitors = 2):
+def __get_departures_direction_mode(data:dict,number_of_monitors = 2):
     '''returns: tuple (departures, platforms) 
         - departures is a list of list containing dictionaries, keys are platform_numbers, 
         entries are a list of the next departures on that platform
@@ -148,6 +135,22 @@ def get_departures_direction_mode(data:dict,number_of_monitors = 2):
     raise NotImplementedError
     
     return departures, number_of_monitors*[None]
+
+def __check_station_name(name:str, line:str = None):
+    value = name.upper().strip()
+    #deal with special cases like 'HEILIGENSTADT S+U'
+    if ' ' in value:
+        value = value[:value.index(' ',6)]
+    #TODO: check for decoding errors here
+    #need for replacement ÃŸ -> SS? probably it is correct decoded and need only to replace ß -> SS
+    value.replace('ß','SS')
+    common_names = ['OBERLAA', 'LEOPOLDAU', 'KARLSPLATZ', 'SEESTADT', 
+                    'SIMMERING', 'OTTAKRING','HÜTTELDORF', 'HEILIGENSTADT', 
+                    'SIEBENHIRTEN', 'FLORIDSDORF','ALAUDAGASSE','ASPERNSTRASSE']#TODO add intermediate terminal stations u1,u2
+    if value in common_names:
+        return value
+    #TODO: implement more checks when not correct values occur
+    return value
 
 def get_refTime(data:dict):
     '''returns: server-time of API-response

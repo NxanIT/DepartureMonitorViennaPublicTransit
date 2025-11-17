@@ -1,9 +1,7 @@
-#import json
-import network
+import network #type:ignore
 from datetime import timedelta
 from machine import Pin, SPI, idle #type:ignore
 import time
-import sys
 
 from Monitors import Monitor
 import DataConversion
@@ -13,9 +11,10 @@ display_mode0 = {'flag_show_platform_nr': True, 'flag_show_line':False}
 display_mode1 = {'flag_show_platform_nr': False, 'flag_show_line':True}
 display_modes = [display_mode0,display_mode1]
 display_text_spacing = 1 #unit: pixel(s)
-#onfiguration data - time constants, all times are expressed in seconds
-TIME_BETWEEN_API_REQUESTS = 120
-MIN_TIME_BETWEEN_API_REQUESTS = 15
+
+#configuration data - time constants, all times are expressed in seconds
+TIME_BETWEEN_API_REQUESTS = 120 #time between updates of departure data
+MIN_TIME_BETWEEN_API_REQUESTS = 15 #minimum time between API requests
 ADVANCED_PREVIEW_ANIMATION_PERIOD = 4
 UPDATE_PERIOD = 1 #should be at least 0.5*#(monitors), meassured time for update of one monitor is ~300ms
 
@@ -37,9 +36,9 @@ Pins_RST = (3,11)
 ssid = 'wlan-ssid'
 password = 'wlan-pw'
 
-class Main:
+class Programm:
     def __init__(self):
-        ''' - configures GPIO pins and connects to monitor
+        ''' - configures GPIO pins and spi connection to monitors
         '''
         #setup GPIO
         self.p_selAdvPrev = Pin(Pin_in_selectAdvancedPreview,Pin.IN,Pin.PULL_UP)
@@ -54,6 +53,10 @@ class Main:
 
         self.p_setDisplayMode = Pin(Pin_in_select_displaymode,Pin.IN,Pin.PULL_UP)
 
+        self.RED_LED = Pin(46,Pin.OUT, value = 0)
+        self.GREEN_LED = Pin(0,Pin.OUT, value = 0)
+        self.BLUE_LED = Pin(45,Pin.OUT, value = 0)
+
         #init Displays
         spi = SPI(1, baudrate=250000, sck=Pin(48), mosi=Pin(38))
         min_len = min(map(len,[Pins_CS,Pins_DC,Pins_RST]))
@@ -67,6 +70,17 @@ class Main:
                                          period_advanced_preview=ADVANCED_PREVIEW_ANIMATION_PERIOD))
         
         self.departure_data = None
+
+    def update_RGB(self,r=None,g=None,b=None):
+        ''' sets light value of internal rgb-LED. 
+            The LED is active low, hence the inverted values of r,g,b are used.
+        '''
+        if(r!=None):
+            self.RED_LED.value(r-1)
+        if(g!=None):
+            self.GREEN_LED.value(g-1)
+        if(b!=None):
+            self.BLUE_LED.value(b-1)
 
     def connect_WLAN(self):
         # Connect to WLAN
@@ -84,29 +98,29 @@ class Main:
         print('connected to WLAN.')
         return True
         
-    def read_pin_input(self):
-        self.AdvancedPrev = False if self.p_selAdvPrev.value()==0 else True
+    def read_pin_input(self): #all entries inverted because of pullup-resistors
+        self.AdvancedPrev = True if self.p_selAdvPrev.value()==0 else False
 
-        list_lineSelect = [pin_id.value() for pin_id in self.pl_lineSelect]
+        list_lineSelect = [1 - pin_id.value() for pin_id in self.pl_lineSelect]
         self.line_selected = LINES[int(''.join(map(str,list_lineSelect)),2)]
 
-        list_stationSelect = [pin_id.value() for pin_id in self.pl_stationSelect]
+        list_stationSelect = [1 - pin_id.value() for pin_id in self.pl_stationSelect]
         self.station_index = int(''.join(map(str,list_stationSelect)),2)
 
-        self.displaymode = display_modes[self.p_setDisplayMode.value()]
-        print("new input is: advanced Prev:",self.AdvancedPrev ,"line:",self.line_selected, "station_index: ",self.station_index,"displaymode: ",self.displaymode)
+        self.displaymode = display_modes[1 - self.p_setDisplayMode.value()]
+        print('new input is: advanced Prev:',self.AdvancedPrev ,'line:',self.line_selected, 'station_index: ',self.station_index,'displaymode: ',self.displaymode)
 
     def show_displays(self):
         if(self.departure_data==None or time.time()-self.time_last_API_request>TIME_BETWEEN_API_REQUESTS):
             self.read_pin_input()
-            self.time_last_API_request = time.time()
             data = DataConversion.fetch(self.line_selected,self.station_index)
             while(data==None):
-                update_RGB(r=1)
+                self.update_RGB(r=1)
                 time.sleep(MIN_TIME_BETWEEN_API_REQUESTS)
-                update_RGB(r=0)
+                self.update_RGB(r=0)
                 data = DataConversion.fetch(self.line_selected,self.station_index)
-            update_RGB(g=1)
+            self.time_last_API_request = time.time()
+            self.update_RGB(g=1)
             self.ref_time = DataConversion.get_refTime(data)
             #TODO: implement other display modes, then change this to below
             self.departure_data, self.platforms = DataConversion.get_departures(data,
@@ -115,18 +129,18 @@ class Main:
           #self.departure_data, self.platforms = DataConversion.get_departures(data,
           #                                                      platform_mode=self.displaymode['flag_show_platform_nr'],
           #                                                      number_of_monitors=len(self.Monitors))
-            update_RGB(g=0)
+            self.update_RGB(g=0)
         number_of_monitors = len(self.Monitors)
-        assert(number_of_monitors==len(self.departure_data)==len(self.platforms))
+        assert(number_of_monitors==len(self.departure_data)==len(self.platforms)) #TODO:remove
         for i in range(len(self.Monitors)):
             ticks1 = time.ticks_ms()
             Mo = self.Monitors[i]
             current_departure_data = self.departure_data[i]
             delta_time_fetched = int(time.time()-self.time_last_API_request)
             current_ref_time = self.ref_time + timedelta(seconds=delta_time_fetched)
-            current_platform = self.platforms[i]
+            current_platform = self.platforms[i]#TODO: if platforms is None, this throws an error
             Mo.show_departures(current_departure_data,current_ref_time,
-                               current_platform,self.displaymode['flag_show_line'])
+                               current_platform,self.displaymode['flag_show_line'],self.AdvancedPrev)
             
             ticks2 = time.ticks_ms()
             delta_ms = time.ticks_diff(ticks2,ticks1)
@@ -138,41 +152,9 @@ class Main:
         
 
 
-RED_LED = Pin(46,Pin.OUT, value = 0)
-GREEN_LED = Pin(0,Pin.OUT, value = 0)
-BLUE_LED = Pin(45,Pin.OUT, value = 0)
 
-def update_RGB(r=None,g=None,b=None):
-    if(r!=None):
-        RED_LED.value(r-1)
-    if(g!=None):
-        GREEN_LED.value(g-1)
-    if(b!=None):
-        BLUE_LED.value(b-1)
 
-        
-if __name__ == '__main__':
-    update_RGB(r=0,g=0,b=0)
-    M = Main()
-    incr_val = 1
-    while not M.connect_WLAN():
-        update_RGB(r=incr_val%2)
-        incr_val += 1
-        time.sleep(10)
-    update_RGB(r=0)
 
-    def turn_off(_):
-        update_RGB(r=1,b=1)
-        M.cleanup()
-        time.sleep(1)
-        sys.exit(0)
-        return
-    
-    while True:
-        #TODO: add interrupt option via jumper GND - GPIO13
-        P_Interrupt = Pin(13,Pin.IN,Pin.PULL_UP)
-        P_Interrupt.irq(handler = turn_off, trigger = Pin.IRQ_FALLING)
-        M.show_displays()
 
 
     
